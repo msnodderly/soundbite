@@ -1,0 +1,32 @@
+# In-flight drafts. Local-only; never committed.
+inbox/
+
+# Pending fetches awaiting slug approval. Local-only.
+archival/_pending/
+
+# Downloaded media. /snarf deletes these after transcription, but ignore them
+# as defense-in-depth so a failed run can't accidentally commit audio/video.
+archival/*.mp3
+archival/*.mp4
+archival/*.m4a
+archival/*.wav
+archival/*.webm
+archival/*.opus
+archival/*.aac
+archival/*.flac
+
+# Intermediate transcript artifacts written by transcribers (we keep only
+# the canonical .transcript.md).
+archival/*.vtt
+archival/*.srt
+archival/*.txt
+archival/*.json.tmp
+
+# Lint output
+lint-report.md
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

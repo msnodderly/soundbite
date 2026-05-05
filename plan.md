@@ -19,7 +19,6 @@ Out (deferred to v2+):
 - Automatic speaker attribution / diarization. Annotate manually for v1.
 - Keeping media artifacts. v1 deletes downloaded audio after transcription; published pages link to the original source with timestamp. Only the raw text transcript and source metadata are retained.
 - Custom theming, custom domain, GH Pages migration.
-- Public launch of the repo. Stays private through v1; flip when output is presentable.
 - Cross-source linking heuristics (semantic suggestions for related soundbites).
 - Topic/aggregation pages that combine multiple soundbites.
 
@@ -33,12 +32,14 @@ Three classes of artifact, three retention rules:
 
 ## Architecture
 
-Two git repos, both public eventually:
+Two git repos, both public:
 
 - `msnodderly/soundbite` (main): skills, scripts, prompts, raw transcript archive (`archival/`), source metadata, plan, README. The deliverable as a working-in-public artifact.
 - `msnodderly/soundbite.wiki` (auto-attached): published soundbite pages and `Home.md` index.
 
-The wiki repo doesn't exist until the first wiki page is created through the GitHub web UI. After that, it is cloneable and pushable as a normal git repo at `git@github.com:msnodderly/soundbite.wiki.git`.
+GitHub requires a public repo to enable the wiki feature on a free account, so the main repo went public earlier than the original "flip when presentable" plan. The wiki was bootstrapped via the GitHub web UI (first stub page created); the wiki repo is now cloneable as a normal git repo at `git@github.com:msnodderly/soundbite.wiki.git`.
+
+Implication: anything committed to either repo is immediately visible. No secrets, no draft commit messages assuming privacy. The "polish before flipping public" round in the original plan is moot; we polish in place.
 
 ## Workflow
 
@@ -160,17 +161,24 @@ Granite-Speech-4.1-2B-Plus notes: 9-minute input cap, no punctuation/capitalizat
 Inputs:
 - Source spec: a YouTube URL **or** path to a local audio/video file.
 - Time range: `START` and `END` as `MM:SS` or `HH:MM:SS`. Required for URLs; optional for local files (defaults to whole file).
-- Optional: a slug or short title hint. Otherwise derive from source title + start time.
+- Optional: a slug override. If absent, the skill proposes content-based slug candidates after transcription and asks the user to pick or supply their own.
+
+Slug rule: slugs reflect the **topic/content of the clip**, not the source title. Source-title-derived slugs are an anti-pattern (they bind the artifact to its container instead of its meaning, and they collide when the same source produces multiple soundbites). See SKILL.md for examples.
 
 Behavior:
-1. If URL: `yt-dlp -x --audio-format mp3 --download-sections "*START-END" -o archival/<slug>.%(ext)s <URL>`. If local: `ffmpeg` trims the requested range into `archival/<slug>.mp3`. The audio file is gitignored.
-2. Capture source metadata: title, channel, upload date, original URL, requested range. Write to `archival/<slug>.meta.json`.
-3. `vcut transcribe archival/<slug>.mp3` produces `archival/<slug>.transcript.md` (timestamped lines, raw).
-4. LLM cleanup pass produces a draft cleaned quote with speaker placeholders (`[Speaker A]`, `[Speaker B]`) where multiple voices are detected.
-5. Write `inbox/<slug>.md` containing: draft title, draft cleaned quote, suggested tags, all metadata, and a link to the raw transcript.
-6. Delete `archival/<slug>.mp3`. (v1 default: don't keep media. The user can pass `--keep-media` to override and retain the file locally; it's still gitignored.)
+1. Fetch into a pending area. URL: `yt-dlp -x --audio-format mp3 --download-sections "*START-END" -o archival/_pending/<temp-id>.%(ext)s <URL>`. Local file: `ffmpeg` trims into `archival/_pending/<temp-id>.mp3`. Audio is gitignored.
+2. Capture source metadata to `archival/_pending/<temp-id>.meta.json` (title, channel, upload date, original URL, requested range, transcriber).
+3. Transcribe to `archival/_pending/<temp-id>.transcript.md` (timestamped, raw).
+4. Delete the pending audio file.
+5. **Slug approval.** The skill reads the pending transcript, proposes 3-5 content-based slug candidates, and prompts the user. User approves one or supplies an override.
+6. Finalize: move `archival/_pending/<temp-id>.{transcript.md,meta.json}` to `archival/<slug>.{transcript.md,meta.json}`, updating the slug field in the meta JSON.
+7. **Mechanical-only cleanup.** Strip VTT scaffolding from `archival/<slug>.transcript.md` (timestamp lines, blank cue separators, `WEBVTT` header, surrounding code fence). Keep one line per cue, content verbatim. Do NOT cut, reword, or reorganize speech content. Editorial decisions belong to the user. Propose net-new fields the raw transcript does not provide: title (3-7 words), tags (`[[Tag-Name]]` form, 2-4 entries), and a 1-3 sentence Context section. Fill Speaker(s)/Source/Captured/Range from `meta.json`.
+8. **Diff approval.** Present the proposed inbox draft as a new-file diff. Label proposed sections (title, tags, context) so the user can verify net-new content; flag the quote section as verbatim from the transcript (VTT scaffolding stripped, content unchanged). Wait for explicit approval before writing.
+9. Write `inbox/<slug>.md` containing: proposed title, verbatim transcript content (one line per former cue), all metadata, proposed tags, proposed context. The user then edits the inbox draft manually to produce the cleaned quote (cuts, prose-shaping, `[...]` elision markers) before running `/ingest`.
 
-Does NOT:
+Pending artifacts stay in `archival/_pending/` (gitignored) if the user abandons the run before approving a slug. They are safe to delete manually.
+
+Does not:
 - Publish to the wiki.
 - Update Home.md.
 - Attempt automatic speaker identification by name.
@@ -186,12 +194,14 @@ Inputs:
 Behavior:
 1. Validate inbox file has required sections (title, quote, source, range, captured date).
 2. Confirm `archival/<slug>.transcript.md` exists; if not, fail loudly.
-3. Generate the published page at `soundbite.wiki/<Slug>.md` using the template above.
-4. Update `soundbite.wiki/Home.md`: prepend an entry to Recent. If the inbox draft has confident topic tags and the topic section already exists in Home, add an entry there too.
-5. Delete `inbox/<slug>.md` from the working tree (it was gitignored, so this leaves no trace).
-6. Commit to both repos with messages of the form `ingest: <slug>` (main) and `publish: <Slug>` (wiki).
+3. Generate the proposed published page at `soundbite.wiki/<Slug>.md` using the template above (in memory; not written yet). Rewrite the raw-transcript link from `../archival/<slug>.transcript.md` to the cross-repo `../blob/main/archival/<slug>.transcript.md` form.
+4. Resolve tags interactively. For each `[[Tag-Name]]`, check whether `soundbite.wiki/<Tag-Name>.md` already exists. If not, prompt the user: "no topic page for `Tag-Name` — create? [y/N]". On yes, generate a stub topic page in memory; otherwise skip the tag.
+5. Generate the proposed `Home.md` update (prepend an entry to Recent; if the topic section exists for any of the soundbite's tags, prepend there too) in memory.
+6. **Diff approval.** Present each proposed file change as a unified diff against the existing file (or "new file" with full body for new pages). Wait for explicit approval per change. Apply approved changes only; loop on revision feedback.
+7. Delete `inbox/<slug>.md` from the working tree (it was gitignored, so this leaves no trace).
+8. Commit to both repos with messages of the form `ingest: <slug>` (main) and `publish: <Slug>` (wiki).
 
-Does NOT:
+Does not:
 - Touch the source file in archival/.
 - Re-transcribe.
 - Push automatically. The user reviews and pushes.
@@ -216,7 +226,7 @@ LLM-assisted checks (single Claude prompt over the collected corpus):
 
 Output: a single `lint-report.md` at the repo root, with sections per check class. Each finding is one line, severity-tagged (`fail` for orphans/missing metadata/dead URLs, `warn` for citation soft-failures, `info` for LLM suggestions).
 
-Does NOT:
+Does not:
 - Auto-fix anything. The human reviews and applies.
 - Modify wiki pages, Home.md, or archival.
 - Run as part of `/snarf` or `/ingest`.
@@ -239,13 +249,45 @@ git push (wiki)
 
 ## Working-in-public principles
 
-- Repo (eventually) public. Skills, prompts, and scripts are checked in, not hidden.
+- Repo is public from the start (forced by GitHub's wiki-requires-public rule; no longer a v1 milestone).
+- Skills, prompts, and scripts are checked in, not hidden.
 - Commit messages describe the iteration honestly; no rewriting history to hide false starts.
 - What is public: the published wiki pages, the raw transcript archive (citation chain), source metadata, and the workflow itself (skills, prompts, scripts). What is not public: in-flight drafts in `inbox/` (gitignored, local-only) and downloaded media (gitignored, deleted after transcription).
 - Raw transcripts are kept verbatim in `archival/` as evidence of chain of custody. The published page is a curated artifact; the archive is the receipt.
 
+## v1 implementation checklist
+
+Round 1 — scaffold + `/snarf` + manual POC:
+- [x] Fold `Does NOT:` → `Does not:` consistency across skill specs in this file.
+- [x] Add this checklist to `plan.md`.
+- [x] Scaffold: `.gitignore`, `README.md`, `AGENTS.md`, `archival/README.md`.
+- [x] `.claude/skills/snarf/SKILL.md` (with content-based slug approval step).
+- [x] `scripts/snarf-fetch.sh` (dependency check, download/trim, transcribe into `archival/_pending/`, delete media).
+- [x] `scripts/snarf-finalize.sh` (validate user-approved slug, move pending files into place).
+- [x] Manual: bootstrap GitHub wiki via web UI (done; first stub page created).
+- [ ] Manual: clone `../soundbite.wiki/` as a sibling working tree.
+- [ ] Manual: install `yt-dlp` and one of `vcut`/`whisper`.
+- [ ] Manual: run POC `/snarf https://www.youtube.com/watch?v=Hy-tQlk5RTU 49:30 58:00`; approve a content-based slug; review the inbox draft.
+
+Round 2 — `/ingest`:
+- [x] `.claude/skills/ingest/SKILL.md`, `scripts/ingest-validate.sh`, `scripts/ingest-finalize.sh`.
+- [x] Diff-approval gate before each file write (wiki page, topic pages, Home.md) via the harness's Write/Edit permission prompts.
+- [x] Interactive topic-page creation in `/ingest` (pulls "topic pages" forward from v2 as opt-in only).
+- [ ] Update `plan.md` v1/v2 lists once topic pages land.
+- [ ] Manual: edit `inbox/useful-not-popular.md` (title, cleaned quote, speakers, tags, context) and run `/ingest inbox/useful-not-popular.md`; verify wiki page + Home.md update; push both repos.
+
+Round 3 — `/lint`:
+- [ ] `.claude/skills/lint/SKILL.md` and `scripts/lint.sh`.
+- [ ] Mechanical checks (orphans, Home integrity, missing metadata, citation rot, slug consistency, stray media).
+- [ ] LLM corpus pass (tag/speaker normalization, contradiction detection, suggested cross-links).
+- [ ] Run lint against the published corpus once 2-3 soundbites exist.
+
+Round 4 — polish:
+- [ ] README polish, working-in-public statement.
+- [x] ~~Flip `msnodderly/soundbite` and the wiki public~~ — already public (GitHub wiki feature requires public repos on free accounts).
+
 ## Open questions
 
 - Handling of multi-speaker clips before Granite-Speech v2: how aggressive to be about identifying speakers by name in the LLM cleanup pass vs leaving it as `[Speaker A/B]` for the human to fill in.
-- When to flip the repo public. Probably after the second or third successful soundbite is published and the workflow is stable.
+- ~~When to flip the repo public.~~ Resolved: already public (forced by the wiki-requires-public rule). Question becomes: how loud to make it (cross-post, link from elsewhere) and when.
 - Topic/category taxonomy: emergent or seeded. v1 emergent.
