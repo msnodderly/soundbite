@@ -138,12 +138,12 @@ else:
 
 lines = [
     "<!--",
-    "Edit this file to produce your soundbite, then run /ingest on it.",
-    "- Lines beginning with `# ` are skipped during /ingest.",
+    "Edit this file to produce your soundbite, then run /publish on it.",
+    "- Lines beginning with `# ` are skipped during /publish.",
     "- Comment out filler/tangents by prefixing the cue line with `# `.",
     "- Edit transcript text directly to fix transcription errors.",
     "- Fill in the title, tags, speaker(s), and context below.",
-    "- Remove these instruction comments before /ingest.",
+    "- Remove these instruction comments before /publish.",
     "-->",
     "",
     "# TODO: title",

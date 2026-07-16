@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# ingest-validate.sh: validate an inbox draft and emit a JSON plan describing
-# every wiki file /ingest would touch. Does not write to the wiki, does not
+# publish-validate.sh: validate an inbox draft and emit a JSON plan describing
+# every wiki file /publish would touch. Does not write to the wiki, does not
 # delete the inbox draft, does not commit.
 #
 # Usage:
-#   bash scripts/ingest-validate.sh <inbox-path>
+#   bash scripts/publish-validate.sh <inbox-path>
 #
 # On success the final stdout line is the path to a JSON plan file under
 # archival/_pending/. On failure exits non-zero with one error line per
@@ -15,7 +15,7 @@ set -euo pipefail
 
 INBOX_PATH="${1:-}"
 if [[ -z "$INBOX_PATH" ]]; then
-  echo "usage: ingest-validate.sh <inbox-path>" >&2
+  echo "usage: publish-validate.sh <inbox-path>" >&2
   exit 64
 fi
 
@@ -163,7 +163,7 @@ if notes_match:
         notes = notes_raw
 
 if errors:
-    print("ERROR: inbox draft is not ready for ingest:", file=sys.stderr)
+    print("ERROR: inbox draft is not ready for publish:", file=sys.stderr)
     for e in errors:
         print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
@@ -211,7 +211,7 @@ plan = {
     "raw_transcript_url": f"https://github.com/msnodderly/soundbite/blob/main/archival/{slug}.transcript.md",
 }
 
-plan_path = repo_root / "archival" / "_pending" / f"{slug}.ingest-plan.json"
+plan_path = repo_root / "archival" / "_pending" / f"{slug}.publish-plan.json"
 plan_path.write_text(json.dumps(plan, indent=2) + "\n")
 print(str(plan_path))
 PY

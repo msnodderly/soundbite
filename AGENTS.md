@@ -18,7 +18,7 @@ immediately visible. Treat every commit as a public commit. No secrets, no
 
 - `plan.md` — design doc and rolling implementation checklist. Read first.
 - `README.md` — short public-facing description.
-- `.claude/skills/` — Claude Code skill definitions (`snarf`, later `ingest`, `lint`).
+- `.claude/skills/` — Claude Code skill definitions (`snarf`, `publish`, later `lint`).
 - `scripts/` — shell scripts called by skills.
 - `archival/` — committed transcripts and metadata. The citation chain.
 - `inbox/` — gitignored in-flight drafts; lives only in the local working tree.
@@ -52,7 +52,7 @@ rather than silently bumping the slug suffix.
 
 - **Kept indefinitely (committed):** `archival/<slug>.transcript.md`,
   `archival/<slug>.meta.json`, the published wiki page.
-- **Ephemeral (gitignored, deleted by `/snarf` or `/ingest`):** downloaded
+- **Ephemeral (gitignored, deleted by `/snarf` or `/publish`):** downloaded
   media (mp3/mp4/etc.) and `inbox/<slug>.md` drafts.
 
 Do not edit raw transcripts in `archival/`. They are evidence. If a
@@ -62,16 +62,16 @@ transcript is wrong, fix the published page or the inbox draft instead.
 
 The user is the editor. The agent is the formatter and the courier.
 
-The agent does **mechanical** work without asking: strip VTT timestamps,
-fill metadata fields from `meta.json`, propose net-new fields the raw
-transcript doesn't provide (title, tags, context), generate the wiki-page
-template wrapper around user-finalized content, rewrite cross-repo links.
+The agent does **mechanical** work without asking: fill metadata fields
+from `meta.json`, scaffold the inbox draft with TODO placeholders,
+generate the wiki-page template wrapper around user-finalized content,
+rewrite cross-repo links.
 
 The agent does NOT do **editorial** work: cutting filler, false starts,
 tangents, or repetition; reordering or reorganizing speech; deciding
-what's "core" vs. "side-quest"; inserting `[...]` elision markers.
-Those judgments are the user's, made by editing `inbox/<slug>.md`
-between `/snarf` and `/ingest`.
+what's "core" vs. "side-quest"; inserting `[...]` elision markers;
+writing the title, tags, or context. Those judgments are the user's,
+made by editing `inbox/<slug>.md` between `/snarf` and `/publish`.
 
 When the agent overreaches and starts making content cuts, it produces
 diffs the user can't meaningfully review (large structural rewrites
@@ -89,14 +89,14 @@ explicit user approval before applying it. The user can approve, revise
 Exempt: mechanical recordings that are not edits — raw transcripts from
 the transcriber, source metadata captured verbatim from yt-dlp,
 slug-rename moves (slug was already approved), and deletion of the inbox
-draft on successful `/ingest` (the publish was already approved).
+draft on successful `/publish` (the publish was already approved).
 
 When the proposed file is new (no prior content to diff against), present
 the proposed file body in full and label the diff "new file". Mark
-sections that are net-new content (title, tags, context) distinctly from
-sections that are verbatim copies (the transcript embedded in the inbox
-draft, the inbox content embedded in the published wiki page) so the
-user can verify nothing was silently transformed.
+sections that are template scaffolding distinctly from sections that are
+verbatim copies of user content (the inbox draft's quote, metadata, and
+context embedded in the published wiki page) so the user can verify
+nothing was silently transformed.
 
 ## Style
 

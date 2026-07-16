@@ -1,6 +1,6 @@
 ---
 name: snarf
-description: Capture an A/V clip from a YouTube URL or local file with a time range, transcribe it with vcut, propose a content-based slug for the user to approve, and write the raw transcript plus a metadata footer into inbox/<slug>.md for the user to edit directly before /ingest. Use this skill when the user asks to grab, clip, save, or snarf a quote from a video, podcast, or interview, or types /snarf.
+description: Capture an A/V clip from a YouTube URL or local file with a time range, transcribe it with vcut, propose a content-based slug for the user to approve, and write the raw transcript plus a metadata footer into inbox/<slug>.md for the user to edit directly before /publish. Use this skill when the user asks to grab, clip, save, or snarf a quote from a video, podcast, or interview, or types /snarf.
 ---
 
 # /snarf
@@ -8,7 +8,7 @@ description: Capture an A/V clip from a YouTube URL or local file with a time ra
 Pulls audio from a source, transcribes it with vcut, and writes the raw
 vcut-format transcript into `inbox/<slug>.md` (plus a metadata footer with
 TODO placeholders for title/tags/context). The user edits that file
-directly before running `/ingest` on it.
+directly before running `/publish` on it.
 
 The slug for the soundbite reflects the **topic/content of the clip**, not
 the source title. The skill proposes candidate slugs after transcribing and
@@ -120,12 +120,12 @@ Print one short confirmation:
 
 ```
 Wrote inbox/<slug>.md.
-Edit to taste, then run /ingest inbox/<slug>.md.
+Edit to taste, then run /publish inbox/<slug>.md.
 ```
 
 ## What this skill does NOT do
 
-- Publish to the wiki. That's `/ingest`.
+- Publish to the wiki. That's `/publish`.
 - Update `Home.md`.
 - Pick a slug without asking.
 - Identify speakers by name automatically.

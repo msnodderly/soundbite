@@ -9,7 +9,7 @@ Inspired by Karpathy's LLM wiki concept, but specialized for time-bounded A/V ca
 In:
 - `/snarf` skill: pull a clip from a YouTube URL (or local file) given a time range, transcribe with timestamps, write a draft into `inbox/`.
 - Optional manual edit of the inbox draft.
-- `/ingest` skill: promote an inbox draft to a published wiki page, update the wiki index, archive the raw transcript.
+- `/publish` skill: promote an inbox draft to a published wiki page, update the wiki index, archive the raw transcript.
 - Optional manual edit of the published page.
 - `/lint` skill: mechanical health check (orphans, missing metadata, broken Home links, citation rot) plus an LLM pass over the corpus for tag and speaker name normalization, contradiction detection, and suggested cross-links.
 - GitHub repo wiki as the publishing target.
@@ -27,8 +27,8 @@ Out (deferred to v2+):
 Three classes of artifact, three retention rules:
 
 - **Kept indefinitely (committed):** raw transcript (`archival/<slug>.transcript.md`), source metadata (`archival/<slug>.meta.json`), the published wiki page, and the wiki repo's git history. These are the citation chain.
-- **Ephemeral (gitignored, deleted by `/snarf` or `/ingest`):** downloaded media files (mp3/mp4 pulled by yt-dlp). v1 does not host or commit media. If a user wants to keep a local clip for personal use (e.g. via `vcut edit`), that's a personal choice outside the repo.
-- **Working drafts (gitignored, ephemeral):** `inbox/<slug>.md`. Lives only in the local working tree during the snarf-edit-ingest cycle. Never committed. Deleted by `/ingest` on successful publish. No `processed/` directory; the published wiki page is the canonical record of what got shipped.
+- **Ephemeral (gitignored, deleted by `/snarf` or `/publish`):** downloaded media files (mp3/mp4 pulled by yt-dlp). v1 does not host or commit media. If a user wants to keep a local clip for personal use (e.g. via `vcut edit`), that's a personal choice outside the repo.
+- **Working drafts (gitignored, ephemeral):** `inbox/<slug>.md`. Lives only in the local working tree during the snarf-edit-publish cycle. Never committed. Deleted by `/publish` on successful publish. No `processed/` directory; the published wiki page is the canonical record of what got shipped.
 
 ## Architecture
 
@@ -50,11 +50,11 @@ source URL + time range
         |
         +--> archival/<slug>.transcript.md   (raw transcript, kept forever)
         +--> archival/<slug>.meta.json       (source metadata, kept forever)
-        +--> inbox/<slug>.md                 (gitignored draft: cleaned quote + metadata)
+        +--> inbox/<slug>.md                 (gitignored draft: raw transcript + metadata footer)
         |
-   (optional manual edit of inbox draft: refine quote, annotate speakers, trim)
+   (manual edit of inbox draft: shape the quote, name speakers, fill title/tags/context)
         |
-     /ingest
+     /publish
         |
         +--> soundbite.wiki: <Slug>.md       (published page)
         +--> soundbite.wiki: Home.md         (index updated)
@@ -63,7 +63,7 @@ source URL + time range
    (optional manual edit of the published wiki page)
 ```
 
-`/snarf` does not publish. `/ingest` does not transcribe. Each step is independently re-runnable.
+`/snarf` does not publish. `/publish` does not transcribe. Each step is independently re-runnable.
 
 ## Repo layout (main)
 
@@ -72,16 +72,17 @@ soundbite/
   README.md                  project overview, working-in-public statement
   plan.md                    this file
   AGENTS.md                  conventions for Claude Code working in this repo
-  skills/
-    snarf/                   /snarf skill definition + prompts
-    ingest/                  /ingest skill definition + prompts
+  .claude/skills/
+    snarf/SKILL.md           /snarf skill definition
+    publish/SKILL.md         /publish skill definition
   scripts/
-    snarf.sh                 yt-dlp + vcut transcribe driver
-    ingest.sh                inbox -> wiki promoter
-  prompts/                   reusable LLM prompts (clean-up, summarize, title)
-  inbox/                     in-progress drafts awaiting ingest (gitignored; deleted on /ingest)
+    snarf-fetch.sh           yt-dlp/ffmpeg + vcut: fetch, trim, transcribe into archival/_pending/
+    snarf-finalize.sh        validate approved slug, move pending files into place, write inbox draft
+    publish-validate.sh      validate inbox draft, emit JSON plan of wiki files to touch
+    publish-finalize.sh      post-publish cleanup: delete inbox draft and plan JSON
+  inbox/                     in-progress drafts awaiting publish (gitignored; deleted on /publish)
   archival/                  raw transcripts (.transcript.md) and source metadata (.meta.json), kept forever for citation. Media files (.mp3/.mp4) are gitignored and deleted after transcription.
-  .gitignore                 ignores inbox/, archival/*.mp3, archival/*.mp4, archival/*.m4a, etc.
+  .gitignore                 ignores inbox/, archival/_pending/, media extensions, etc.
 ```
 
 ## Soundbite page format (published wiki page)
@@ -140,7 +141,7 @@ About: [What this is](About) | [How it works](How-it-works) | [Source repo](http
 (populated as content accumulates)
 ```
 
-`/ingest` is responsible for adding the new page to "Recent" and prompting (or autonomously deciding) whether to add it under a topic or source heading. v1 keeps this simple: always prepend to Recent, optionally add a topic line if the LLM is confident.
+`/publish` is responsible for adding the new page to "Recent" and prompting (or autonomously deciding) whether to add it under a topic or source heading. v1 keeps this simple: always prepend to Recent, optionally add a topic line if the LLM is confident.
 
 ## Toolchain
 
@@ -161,7 +162,7 @@ Granite-Speech-4.1-2B-Plus notes: 9-minute input cap, no punctuation/capitalizat
 Inputs:
 - Source spec: a YouTube URL **or** path to a local audio/video file.
 - Time range: `START` and `END` as `MM:SS` or `HH:MM:SS`. Required for URLs; optional for local files (defaults to whole file).
-- Optional: a slug override. If absent, the skill proposes content-based slug candidates after transcription and asks the user to pick or supply their own.
+- No slug argument. The skill proposes content-based slug candidates after transcription and asks the user to pick or supply their own.
 
 Slug rule: slugs reflect the **topic/content of the clip**, not the source title. Source-title-derived slugs are an anti-pattern (they bind the artifact to its container instead of its meaning, and they collide when the same source produces multiple soundbites). See SKILL.md for examples.
 
@@ -172,9 +173,7 @@ Behavior:
 4. Delete the pending audio file.
 5. **Slug approval.** The skill reads the pending transcript, proposes 3-5 content-based slug candidates, and prompts the user. User approves one or supplies an override.
 6. Finalize: move `archival/_pending/<temp-id>.{transcript.md,meta.json}` to `archival/<slug>.{transcript.md,meta.json}`, updating the slug field in the meta JSON.
-7. **Mechanical-only cleanup.** Strip VTT scaffolding from `archival/<slug>.transcript.md` (timestamp lines, blank cue separators, `WEBVTT` header, surrounding code fence). Keep one line per cue, content verbatim. Do NOT cut, reword, or reorganize speech content. Editorial decisions belong to the user. Propose net-new fields the raw transcript does not provide: title (3-7 words), tags (`[[Tag-Name]]` form, 2-4 entries), and a 1-3 sentence Context section. Fill Speaker(s)/Source/Captured/Range from `meta.json`.
-8. **Diff approval.** Present the proposed inbox draft as a new-file diff. Label proposed sections (title, tags, context) so the user can verify net-new content; flag the quote section as verbatim from the transcript (VTT scaffolding stripped, content unchanged). Wait for explicit approval before writing.
-9. Write `inbox/<slug>.md` containing: proposed title, verbatim transcript content (one line per former cue), all metadata, proposed tags, proposed context. The user then edits the inbox draft manually to produce the cleaned quote (cuts, prose-shaping, `[...]` elision markers) before running `/ingest`.
+7. Write `inbox/<slug>.md` containing the raw vcut-format transcript verbatim plus a metadata footer: Speaker(s)/Source/Captured/Range filled from `meta.json` (with `?t=<seconds>` appended to YouTube URLs), TODO placeholders for title, tags, and context. The agent does NOT cut, reword, or reorganize speech content, and does NOT propose the title, tags, or context — those are the user's, written by editing the draft (cuts, prose-shaping, `[...]` elision markers, commenting out cue lines with `# `) before running `/publish`.
 
 Pending artifacts stay in `archival/_pending/` (gitignored) if the user abandons the run before approving a slug. They are safe to delete manually.
 
@@ -186,7 +185,7 @@ Does not:
 
 Outputs to stdout: the path of the inbox draft and a one-line "what to do next" pointer.
 
-## /ingest skill spec
+## /publish skill spec
 
 Inputs:
 - Path to an inbox file (default: only one in inbox, otherwise prompt).
@@ -199,7 +198,7 @@ Behavior:
 5. Generate the proposed `Home.md` update (prepend an entry to Recent; if the topic section exists for any of the soundbite's tags, prepend there too) in memory.
 6. **Diff approval.** Present each proposed file change as a unified diff against the existing file (or "new file" with full body for new pages). Wait for explicit approval per change. Apply approved changes only; loop on revision feedback.
 7. Delete `inbox/<slug>.md` from the working tree (it was gitignored, so this leaves no trace).
-8. Commit to both repos with messages of the form `ingest: <slug>` (main) and `publish: <Slug>` (wiki).
+8. Commit to both repos with messages of the form `publish: <slug>` (main, only if it has changes) and `publish: <Slug>` (wiki).
 
 Does not:
 - Touch the source file in archival/.
@@ -229,7 +228,7 @@ Output: a single `lint-report.md` at the repo root, with sections per check clas
 Does not:
 - Auto-fix anything. The human reviews and applies.
 - Modify wiki pages, Home.md, or archival.
-- Run as part of `/snarf` or `/ingest`.
+- Run as part of `/snarf` or `/publish`.
 
 ## POC test case (v1 done definition)
 
@@ -242,7 +241,7 @@ v1 ships when this command sequence works and produces a published wiki page tha
 ```
 /snarf https://www.youtube.com/watch?v=Hy-tQlk5RTU 49:30 58:00
 # (manual edit of inbox/<slug>.md)
-/ingest inbox/<slug>.md
+/publish inbox/<slug>.md
 git push (main)
 git push (wiki)
 ```
@@ -269,12 +268,12 @@ Round 1 — scaffold + `/snarf` + manual POC:
 - [ ] Manual: install `yt-dlp` and one of `vcut`/`whisper`.
 - [ ] Manual: run POC `/snarf https://www.youtube.com/watch?v=Hy-tQlk5RTU 49:30 58:00`; approve a content-based slug; review the inbox draft.
 
-Round 2 — `/ingest`:
-- [x] `.claude/skills/ingest/SKILL.md`, `scripts/ingest-validate.sh`, `scripts/ingest-finalize.sh`.
+Round 2 — `/publish`:
+- [x] `.claude/skills/publish/SKILL.md`, `scripts/publish-validate.sh`, `scripts/publish-finalize.sh`.
 - [x] Diff-approval gate before each file write (wiki page, topic pages, Home.md) via the harness's Write/Edit permission prompts.
-- [x] Interactive topic-page creation in `/ingest` (pulls "topic pages" forward from v2 as opt-in only).
+- [x] Interactive topic-page creation in `/publish` (pulls "topic pages" forward from v2 as opt-in only).
 - [ ] Update `plan.md` v1/v2 lists once topic pages land.
-- [ ] Manual: edit `inbox/useful-not-popular.md` (title, cleaned quote, speakers, tags, context) and run `/ingest inbox/useful-not-popular.md`; verify wiki page + Home.md update; push both repos.
+- [ ] Manual: edit `inbox/useful-not-popular.md` (title, cleaned quote, speakers, tags, context) and run `/publish inbox/useful-not-popular.md`; verify wiki page + Home.md update; push both repos.
 
 Round 3 — `/lint`:
 - [ ] `.claude/skills/lint/SKILL.md` and `scripts/lint.sh`.
@@ -283,7 +282,9 @@ Round 3 — `/lint`:
 - [ ] Run lint against the published corpus once 2-3 soundbites exist.
 
 Round 4 — polish:
-- [ ] README polish, working-in-public statement.
+- [x] README polish, working-in-public statement.
+- [x] Rename `/ingest` to `/publish` (skill, scripts, docs). "Ingest" implied taking data in; the step ships content out to the wiki.
+- [x] `archival/README.md` (was checked off in Round 1 but never actually written).
 - [x] ~~Flip `msnodderly/soundbite` and the wiki public~~ — already public (GitHub wiki feature requires public repos on free accounts).
 
 ## Open questions

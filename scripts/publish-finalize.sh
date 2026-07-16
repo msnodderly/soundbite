@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# ingest-finalize.sh: clean up after a successful /ingest. Deletes the
+# publish-finalize.sh: clean up after a successful /publish. Deletes the
 # inbox draft and the pending plan JSON. Does NOT commit. Does NOT push.
 #
 # Usage:
-#   bash scripts/ingest-finalize.sh <slug>
+#   bash scripts/publish-finalize.sh <slug>
 
 set -euo pipefail
 
 SLUG="${1:-}"
 if [[ -z "$SLUG" ]]; then
-  echo "usage: ingest-finalize.sh <slug>" >&2
+  echo "usage: publish-finalize.sh <slug>" >&2
   exit 64
 fi
 
@@ -24,7 +24,7 @@ if ! [[ "$SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
 fi
 
 INBOX_PATH="inbox/${SLUG}.md"
-PLAN_PATH="archival/_pending/${SLUG}.ingest-plan.json"
+PLAN_PATH="archival/_pending/${SLUG}.publish-plan.json"
 
 if [[ -f "$INBOX_PATH" ]]; then
   rm -f "$INBOX_PATH"

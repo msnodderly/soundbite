@@ -70,10 +70,14 @@ CHANNEL=""
 UPLOAD_DATE=""
 
 if $IS_URL; then
-  TITLE="$(yt-dlp --get-title "$SOURCE" 2>/dev/null || true)"
-  CHANNEL="$(yt-dlp --print uploader "$SOURCE" 2>/dev/null || true)"
-  UPLOAD_DATE="$(yt-dlp --print upload_date "$SOURCE" 2>/dev/null || true)"
-  if [[ -z "$TITLE" ]]; then
+  # One metadata probe (--print implies --simulate; three lines out).
+  META_PROBE="$(yt-dlp --print title --print uploader --print upload_date "$SOURCE" 2>/dev/null || true)"
+  TITLE="$(sed -n 1p <<<"$META_PROBE")"
+  CHANNEL="$(sed -n 2p <<<"$META_PROBE")"
+  UPLOAD_DATE="$(sed -n 3p <<<"$META_PROBE")"
+  [[ "$CHANNEL" == "NA" ]] && CHANNEL=""
+  [[ "$UPLOAD_DATE" == "NA" ]] && UPLOAD_DATE=""
+  if [[ -z "$TITLE" || "$TITLE" == "NA" ]]; then
     echo "ERROR: yt-dlp could not resolve a title for $SOURCE" >&2
     exit 1
   fi
@@ -129,9 +133,10 @@ meta = {
 print(json.dumps(meta, indent=2))
 PY
 
-# Step 3: transcribe with vcut. vcut writes vcut-format lines
-# (`[HH:MM:SS.mmm -> HH:MM:SS.mmm] | text`) to stdout.
-vcut transcribe "$AUDIO" > "$TRANSCRIPT"
+# Step 3: transcribe with vcut. The transcript (vcut-format lines
+# `[HH:MM:SS.mmm -> HH:MM:SS.mmm] | text`) goes to the -o path; vcut's
+# stdout is progress chatter, so route it to stderr.
+vcut transcribe "$AUDIO" -o "$TRANSCRIPT" >&2
 
 if [[ ! -s "$TRANSCRIPT" ]]; then
   echo "ERROR: transcript is empty: $TRANSCRIPT" >&2

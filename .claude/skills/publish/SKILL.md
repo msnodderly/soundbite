@@ -1,11 +1,9 @@
 ---
-name: ingest
-description: Promote a hand-edited inbox/<slug>.md soundbite draft to a published page in the sibling soundbite.wiki repo. Validates required fields, generates the wiki page from the draft, updates Home.md, creates topic page stubs for new tags, then commits both repos (without pushing) on user approval. Use when the user types /ingest or asks to publish, ship, promote, or ingest an inbox draft.
+name: publish
+description: Promote a hand-edited inbox/<slug>.md soundbite draft to a published page in the sibling soundbite.wiki repo. Validates required fields, generates the wiki page from the draft, updates Home.md, creates topic page stubs for new tags, then commits both repos (without pushing) on user approval. Use when the user types /publish or asks to publish, ship, promote, or ingest an inbox draft.
 ---
 
-Base directory for this skill: /Users/mattsnodderly/src/soundbite/.claude/skills/ingest
-
-# /ingest
+# /publish
 
 Promotes an `inbox/<slug>.md` draft to a published page in the sibling
 `../soundbite.wiki/` repo. Updates `Home.md` and any topic pages required
@@ -14,11 +12,11 @@ approval. Does not push.
 
 ## Inputs
 
-`/ingest [<inbox-path>]`
+`/publish [<inbox-path>]`
 
 - `<inbox-path>` — path to an inbox file. If omitted, the skill picks the
   only file in `inbox/`. With zero or multiple files in `inbox/` and no
-  argument, ask the user which to ingest.
+  argument, ask the user which to publish.
 
 ## Steps
 
@@ -26,11 +24,11 @@ approval. Does not push.
 
 If the user supplied a path, validate that it exists and is under
 `inbox/`. Otherwise, list `inbox/*.md`. If exactly one, use it. If zero,
-report that and stop. If more than one, ask the user which to ingest.
+report that and stop. If more than one, ask the user which to publish.
 
 ### 2. Validate
 
-Run `bash scripts/ingest-validate.sh <inbox-path>`. The script:
+Run `bash scripts/publish-validate.sh <inbox-path>`. The script:
 
 - Parses the inbox file (title, speakers, source, captured, range, tags,
   context, notes, quote body).
@@ -39,7 +37,7 @@ Run `bash scripts/ingest-validate.sh <inbox-path>`. The script:
 - Confirms wiki sibling at `../soundbite.wiki/` (or `SOUNDBITE_WIKI_DIR`).
 - On any missing/TODO field, exits non-zero with one error line per
   problem on stderr.
-- On success, writes a JSON plan to `archival/_pending/<slug>.ingest-plan.json`
+- On success, writes a JSON plan to `archival/_pending/<slug>.publish-plan.json`
   and prints the plan path on stdout.
 
 If the script exits non-zero, surface its stderr to the user and stop.
@@ -174,24 +172,20 @@ For each tag in `tags` (in order):
 In the main repo, run `git status --short` and show the output. In the
 wiki repo, run `git -C <wiki_dir> status --short` and show the output.
 
-State explicitly: "ready to commit `ingest: <slug>` (main) and `publish:
+State explicitly: "ready to commit `publish: <slug>` (main) and `publish:
 <wiki_slug>` (wiki). Push will not happen. Commit both? [y/N]"
 
 ### 9. Commit (only if user said yes)
 
 If the user approved:
 
-- In the main repo: `git add -A archival/_pending/` is unnecessary (the
-  pending plan is gitignored), but stage every wiki-related artifact in
-  the main repo only if /ingest touched main-repo files. /ingest does not
-  modify any main-repo content other than deleting the inbox draft (which
-  is gitignored). Therefore, the main-repo commit only makes sense if
-  there are staged or unstaged changes; if `git status --short` is empty,
-  skip the main commit and tell the user.
 - In the wiki repo: `git -C <wiki_dir> add -A`, then `git -C <wiki_dir>
   commit -m "publish: <wiki_slug>"`.
-- If the main repo had changes, `git add -A` and `git commit -m "ingest:
-  <slug>"`.
+- In the main repo: /publish normally leaves no committable changes (the
+  inbox draft and plan JSON are gitignored). If `git status --short` is
+  empty, skip the main commit and tell the user. If there are changes
+  (e.g. a new archival transcript from an earlier /snarf), `git add -A`
+  and `git commit -m "publish: <slug>"`.
 
 Do not pass `--no-verify`. Do not include any co-author trailer. Do not
 push.
@@ -201,11 +195,11 @@ will not be deleted in step 10 in that case — see below.
 
 ### 10. Finalize (only if user committed)
 
-If the wiki commit succeeded, run `bash scripts/ingest-finalize.sh <slug>`.
+If the wiki commit succeeded, run `bash scripts/publish-finalize.sh <slug>`.
 The script removes `inbox/<slug>.md` and the plan JSON.
 
 If the user declined to commit, do NOT run finalize. Tell the user the
-inbox draft and plan JSON are still in place; they can re-run `/ingest
+inbox draft and plan JSON are still in place; they can re-run `/publish
 inbox/<slug>.md` to retry, or manually clean up.
 
 ### 11. Confirm to the user
@@ -230,8 +224,8 @@ Published <wiki_slug> to the wiki. Pending pushes:
 
 If the agent is killed mid-run:
 
-- Pending plan: `archival/_pending/<slug>.ingest-plan.json` may exist.
-  Safe to delete; re-running `/ingest` regenerates it.
+- Pending plan: `archival/_pending/<slug>.publish-plan.json` may exist.
+  Safe to delete; re-running `/publish` regenerates it.
 - Wiki working tree: may have uncommitted changes. The user can review
   with `git -C <wiki_dir> status` and either commit or `git -C <wiki_dir>
   checkout -- .` to discard.
